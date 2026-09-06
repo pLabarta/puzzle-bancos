@@ -1,0 +1,19 @@
+{
+  "name": "puzzle-bancos",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "dev": "elm make src/Main.elm --output=elm.js --debug",
+    "build": "rm -rf dist && mkdir -p dist && elm make src/Main.elm --output=dist/elm.js --optimize && cp index.html dist/index.html",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "devDependencies": {
+    "elm": "^0.19.2-0",
+    "elm-format": "^0.8.8"
+  }
+}
