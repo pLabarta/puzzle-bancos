@@ -94,6 +94,7 @@ type Msg
     | SeatClicked Seat
     | BufferAreaClicked
     | ToggleClues
+    | CollapseClues
 
 
 update : Msg -> Model -> ( Model, Cmd Msg )
@@ -117,6 +118,9 @@ update msg model =
 
         ToggleClues ->
             ( { model | cluesOpen = not model.cluesOpen }, Cmd.none )
+
+        CollapseClues ->
+            ( { model | cluesOpen = False }, Cmd.none )
 
 
 {-| Click on a student. With nobody selected, pick them up: remove them from
@@ -285,7 +289,18 @@ view model =
         , HA.style "overflow-x" "hidden"
         ]
         [ Html.div
-            [ HA.style "padding" "24px" ]
+            (List.concat
+                [ [ HA.style "padding" "24px" ]
+                , if model.cluesOpen then
+                    -- Any click in the play area (a seat, a student, empty
+                    -- board space, ...) also collapses the expanded clues
+                    -- drawer, since it's an overlay that's now in the way.
+                    [ HE.onClick CollapseClues ]
+
+                  else
+                    []
+                ]
+            )
             [ boardView model
             , if allSolved model.board then
                 Html.p
