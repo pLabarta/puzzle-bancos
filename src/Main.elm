@@ -370,7 +370,15 @@ selectOrSwap studentId model =
                 in
                 { model
                     | board = newBoard
-                    , selected = Just { studentId = studentId, origin = otherOrigin }
+
+                    -- The newly-picked-up student's "return home" spot must
+                    -- be wherever is actually empty right now - which is
+                    -- `sel.origin` (the *previous* selection's origin), not
+                    -- `otherOrigin` (their own old seat): that seat was
+                    -- just filled by `sel.studentId` above. Using
+                    -- `otherOrigin` here was the bug - cancelling the
+                    -- selection would overwrite whoever just sat down there.
+                    , selected = Just { studentId = studentId, origin = sel.origin }
                     , discoveredAxioms = discoverViolatedAxioms newBoard model.discoveredAxioms
                 }
                     |> advanceIfSolved newBoard
@@ -618,7 +626,7 @@ instructionsView maybeTeam =
             , HA.style "max-width" "600px"
             , HA.style "font-size" "clamp(22px, 4vw, 30px)"
             ]
-            [ Html.text "Encontrá un lugar para cada alumno en el aula." ]
+            [ Html.text "Encontrá un lugar en el aula para cada alumno" ]
         , Html.button
             [ HE.onClick ContinuarClicked
             , HA.style "background" accent
@@ -725,6 +733,22 @@ debugAutoSolveButton fontSize =
         [ Html.text "🐞 Resolver automáticamente (debug)" ]
 
 
+{-| The board is noticeably taller than it is wide (2 rows of seats stacked
+above the selected zone and waiting zone), so sizing it from viewport width
+alone (as if it were a typical wide/short element) lets it run taller than
+the screen on most devices - fine on a very wide monitor, but it overflows
+vertically on tablets and phones. `90 * (width / height)` is the vh value
+that would make the board exactly as tall as `90vh` while keeping its
+aspect ratio; taking the smaller of that and `90vw` (via CSS `min()`) means
+whichever dimension is tighter - width or height - is the one that ends up
+constraining the size, so the board always fits within 90% of the viewport
+in both directions at once.
+-}
+boardMaxWidthVh : Float
+boardMaxWidthVh =
+    90 * (Layout.boardWidth / Layout.boardHeight)
+
+
 boardView : Model -> Svg Msg
 boardView model =
     Svg.svg
@@ -739,7 +763,10 @@ boardView model =
         , SA.style
             ("background:#24262b;border:1px solid #3a3d44;"
                 ++ "display:block;margin:0 auto;"
-                ++ "width:90vw;max-width:1100px;min-width:280px;height:auto;"
+                ++ "width:max(280px, min(90vw, "
+                ++ String.fromFloat boardMaxWidthVh
+                ++ "vh, 1100px));"
+                ++ "height:auto;"
             )
         ]
         (List.concat
@@ -1001,7 +1028,7 @@ studentCircle studentId cx cy =
 
 drawerWidthCollapsed : String
 drawerWidthCollapsed =
-    "64px"
+    "84px"
 
 
 drawerWidthOpen : String
@@ -1112,9 +1139,16 @@ drawerHeader counts isOpen fontSize =
                 HA.style "flex-direction" "column"
             , HA.style "gap" "8px"
             ]
-            [ countBadge "✓" counts.ok "#2a9d8f" fontSize
-            , countBadge "✗" counts.failing "#e63946" fontSize
-            ]
+            (if isOpen then
+                [ countBadge "✓" counts.ok "#2a9d8f" fontSize
+                , countBadge "✗" counts.failing "#e63946" fontSize
+                ]
+
+             else
+                [ countCircle "✓" counts.ok "#2ecc71" fontSize
+                , countCircle "✗" counts.failing "#e63946" fontSize
+                ]
+            )
         , if isOpen then
             -- Expanded: only this button collapses it, so clicking around
             -- the clue list (to read/scroll) doesn't accidentally close it.
@@ -1156,6 +1190,44 @@ countBadge icon count color fontSize =
         [ Html.span [] [ Html.text icon ]
         , Html.span [] [ Html.text (String.fromInt count) ]
         ]
+
+
+{-| The collapsed rail's ✓/✗ counts: a solid circle (icon + number, in
+white) rather than colored text, so they read at a glance without needing
+the drawer open. Gray instead of red/green when the count is still zero -
+nothing to report yet, so it shouldn't look alarming or reassuring.
+-}
+countCircle : String -> Int -> String -> Int -> Html Msg
+countCircle icon count color fontSize =
+    let
+        circleSize =
+            fontSize + 20
+
+        contentFontSize =
+            max 12 (fontSize - 6)
+
+        background =
+            if count == 0 then
+                "#53565c"
+
+            else
+                color
+    in
+    Html.div
+        [ HA.style "display" "flex"
+        , HA.style "align-items" "center"
+        , HA.style "justify-content" "center"
+        , HA.style "width" (String.fromInt circleSize ++ "px")
+        , HA.style "height" (String.fromInt circleSize ++ "px")
+        , HA.style "border-radius" "50%"
+        , HA.style "background" background
+        , HA.style "color" "#ffffff"
+        , HA.style "font-weight" "bold"
+        , HA.style "font-size" (String.fromInt contentFontSize ++ "px")
+        , HA.style "line-height" "1"
+        , HA.style "flex-shrink" "0"
+        ]
+        [ Html.text (icon ++ " " ++ String.fromInt count) ]
 
 
 cluesList : Board -> Set Int -> Bool -> Int -> Html Msg
