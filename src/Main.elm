@@ -651,7 +651,7 @@ debugAutoSolveButton =
         , HA.style "border" "none"
         , HA.style "border-radius" "8px"
         , HA.style "padding" "10px 12px"
-        , HA.style "font-size" "13px"
+        , HA.style "font-size" "20px"
         , HA.style "font-weight" "bold"
         , HA.style "font-family" "inherit"
         , HA.style "cursor" "pointer"
@@ -1028,7 +1028,12 @@ drawerHeader counts isOpen =
             HA.style "flex-direction" "column"
         ]
         [ if isOpen then
-            Html.h3 [ HA.style "margin" "0", HA.style "color" "#ffffff" ] [ Html.text "Pistas" ]
+            Html.h3
+                [ HA.style "margin" "0"
+                , HA.style "color" "#ffffff"
+                , HA.style "font-size" "20px"
+                ]
+                [ Html.text "Pistas" ]
 
           else
             Html.text ""
@@ -1053,7 +1058,7 @@ drawerHeader counts isOpen =
                 , HA.style "border" "none"
                 , HA.style "color" "#e3e1dc"
                 , HA.style "cursor" "pointer"
-                , HA.style "font-size" "18px"
+                , HA.style "font-size" "20px"
                 , HA.style "padding" "4px"
                 , HA.attribute "aria-label" "Cerrar pistas"
                 ]
@@ -1065,7 +1070,7 @@ drawerHeader counts isOpen =
             -- click handler or the click would bubble and toggle twice.
             Html.span
                 [ HA.style "color" "#e3e1dc"
-                , HA.style "font-size" "18px"
+                , HA.style "font-size" "20px"
                 , HA.style "padding" "4px"
                 ]
                 [ Html.text "‹" ]
@@ -1080,7 +1085,7 @@ countBadge icon count color =
         , HA.style "gap" "4px"
         , HA.style "color" color
         , HA.style "font-weight" "bold"
-        , HA.style "font-size" "14px"
+        , HA.style "font-size" "20px"
         ]
         [ Html.span [] [ Html.text icon ]
         , Html.span [] [ Html.text (String.fromInt count) ]
@@ -1101,7 +1106,9 @@ cluesList board discoveredAxioms debug =
         ]
         [ if List.isEmpty discovered then
             Html.p
-                [ HA.style "color" "#9aa0a6" ]
+                [ HA.style "color" "#9aa0a6"
+                , HA.style "font-size" "20px"
+                ]
                 [ Html.text "Las pistas se revelan cuando algo no cuadra. Prueba a sentar a alguien." ]
 
           else
@@ -1138,5 +1145,6 @@ clueItem board axiom =
     Html.li
         [ HA.style "color" color
         , HA.style "margin-bottom" "6px"
+        , HA.style "font-size" "20px"
         ]
         [ Html.text (icon ++ " " ++ Axioms.clueText studentOrPlaceholder axiom) ]
