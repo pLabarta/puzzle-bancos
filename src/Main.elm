@@ -289,6 +289,23 @@ clientYDecoder =
     Decode.field "clientY" Decode.float
 
 
+{-| Touch events don't carry clientX/clientY directly - they're on the first
+entry of the `touches` array. Touch targeting "locks" to whichever element
+received the `touchstart`, so a touchmove/touchend handler placed on the
+board keeps firing for a drag even once the finger has moved over other
+elements (unlike mouse events, which don't need this).
+-}
+touchPointDecoder : Decode.Decoder ( Float, Float )
+touchPointDecoder =
+    Decode.field "touches"
+        (Decode.index 0
+            (Decode.map2 Tuple.pair
+                (Decode.field "clientX" Decode.float)
+                (Decode.field "clientY" Decode.float)
+            )
+        )
+
+
 
 -- VIEW
 
@@ -342,17 +359,29 @@ view model =
 boardView : Model -> Svg Msg
 boardView model =
     Svg.svg
-        [ SA.id "board"
-        , SA.width (String.fromFloat Layout.boardWidth)
-        , SA.height (String.fromFloat Layout.boardHeight)
-        , SA.viewBox
-            ("0 0 "
-                ++ String.fromFloat Layout.boardWidth
-                ++ " "
-                ++ String.fromFloat Layout.boardHeight
-            )
-        , SA.style "background:#24262b;border:1px solid #3a3d44;"
-        ]
+        (List.concat
+            [ [ SA.id "board"
+              , SA.width (String.fromFloat Layout.boardWidth)
+              , SA.height (String.fromFloat Layout.boardHeight)
+              , SA.viewBox
+                    ("0 0 "
+                        ++ String.fromFloat Layout.boardWidth
+                        ++ " "
+                        ++ String.fromFloat Layout.boardHeight
+                    )
+              , SA.style "background:#24262b;border:1px solid #3a3d44;touch-action:none;"
+              ]
+            , if model.drag == Nothing then
+                []
+
+              else
+                [ HE.preventDefaultOn "touchmove"
+                    (touchPointDecoder |> Decode.map (\( x, y ) -> ( MouseMoved x y, True )))
+                , SE.on "touchend" (Decode.succeed MouseUp)
+                , SE.on "touchcancel" (Decode.succeed MouseUp)
+                ]
+            ]
+        )
         (List.concat
             [ [ chalkboardView ]
             , benchesView
@@ -500,6 +529,10 @@ studentCircleAt studentId cx cy isGhost =
 
         mouseDownDecoder =
             Decode.map2 (StudentMouseDown studentId) clientXDecoder clientYDecoder
+
+        touchStartDecoder =
+            touchPointDecoder
+                |> Decode.map (\( x, y ) -> ( StudentMouseDown studentId x y, True ))
     in
     Svg.g
         (if isGhost then
@@ -507,7 +540,8 @@ studentCircleAt studentId cx cy isGhost =
 
          else
             [ SE.on "mousedown" mouseDownDecoder
-            , SA.style "cursor:grab;"
+            , HE.preventDefaultOn "touchstart" touchStartDecoder
+            , SA.style "cursor:grab;touch-action:none;"
             ]
         )
         [ Svg.circle
@@ -572,27 +606,37 @@ cluesDrawer board discoveredAxioms isOpen =
             discoveredCounts board discoveredAxioms
     in
     Html.div
-        [ HA.style "position" "fixed"
-        , HA.style "top" "0"
-        , HA.style "right" "0"
-        , HA.style "height" "100vh"
-        , HA.style "width"
-            (if isOpen then
-                drawerWidthOpen
+        (List.concat
+            [ [ HA.style "position" "fixed"
+              , HA.style "top" "0"
+              , HA.style "right" "0"
+              , HA.style "height" "100vh"
+              , HA.style "width"
+                    (if isOpen then
+                        drawerWidthOpen
 
-             else
-                drawerWidthCollapsed
-            )
-        , HA.style "background" "#1d1f24"
-        , HA.style "border-left" "1px solid #3a3d44"
-        , HA.style "box-shadow" "-4px 0 12px rgba(0,0,0,0.35)"
-        , HA.style "transition" "width 0.2s ease"
-        , HA.style "overflow" "hidden"
-        , HA.style "box-sizing" "border-box"
-        , HA.style "display" "flex"
-        , HA.style "flex-direction" "column"
-        , HA.style "z-index" "10"
-        ]
+                     else
+                        drawerWidthCollapsed
+                    )
+              , HA.style "background" "#1d1f24"
+              , HA.style "border-left" "1px solid #3a3d44"
+              , HA.style "box-shadow" "-4px 0 12px rgba(0,0,0,0.35)"
+              , HA.style "transition" "width 0.2s ease"
+              , HA.style "overflow" "hidden"
+              , HA.style "box-sizing" "border-box"
+              , HA.style "display" "flex"
+              , HA.style "flex-direction" "column"
+              , HA.style "z-index" "10"
+              ]
+            , if isOpen then
+                []
+
+              else
+                -- Collapsed: the whole rail expands the drawer, not just
+                -- the chevron, so it's easy to tap on a tablet.
+                [ HE.onClick ToggleClues, HA.style "cursor" "pointer" ]
+            ]
+        )
         [ drawerHeader counts isOpen
         , if isOpen then
             cluesList board discoveredAxioms
@@ -632,30 +676,31 @@ drawerHeader counts isOpen =
             [ countBadge "✓" counts.ok "#2a9d8f"
             , countBadge "✗" counts.failing "#e63946"
             ]
-        , Html.button
-            [ HE.onClick ToggleClues
-            , HA.style "background" "none"
-            , HA.style "border" "none"
-            , HA.style "color" "#e3e1dc"
-            , HA.style "cursor" "pointer"
-            , HA.style "font-size" "18px"
-            , HA.style "padding" "4px"
-            , HA.attribute "aria-label"
-                (if isOpen then
-                    "Cerrar pistas"
+        , if isOpen then
+            -- Expanded: only this button collapses it, so clicking around
+            -- the clue list (to read/scroll) doesn't accidentally close it.
+            Html.button
+                [ HE.onClick ToggleClues
+                , HA.style "background" "none"
+                , HA.style "border" "none"
+                , HA.style "color" "#e3e1dc"
+                , HA.style "cursor" "pointer"
+                , HA.style "font-size" "18px"
+                , HA.style "padding" "4px"
+                , HA.attribute "aria-label" "Cerrar pistas"
+                ]
+                [ Html.text "›" ]
 
-                 else
-                    "Abrir pistas"
-                )
-            ]
-            [ Html.text
-                (if isOpen then
-                    "›"
-
-                 else
-                    "‹"
-                )
-            ]
+          else
+            -- Collapsed: purely decorative - the whole rail (an ancestor)
+            -- already expands on click, so this must NOT have its own
+            -- click handler or the click would bubble and toggle twice.
+            Html.span
+                [ HA.style "color" "#e3e1dc"
+                , HA.style "font-size" "18px"
+                , HA.style "padding" "4px"
+                ]
+                [ Html.text "‹" ]
         ]
 
 
