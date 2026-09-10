@@ -1006,7 +1006,7 @@ drawerWidthCollapsed =
 
 drawerWidthOpen : String
 drawerWidthOpen =
-    "320px"
+    "500px"
 
 
 {-| Counts of currently-discovered axioms that are satisfied vs. violated
