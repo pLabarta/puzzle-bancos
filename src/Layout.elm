@@ -5,13 +5,14 @@ module Layout exposing
     , boardWidth
     , bufferRect
     , bufferSlotCenter
+    , chalkboardRect
     , hitTest
     , seatCenter
     , seatRadius
     , seatTopLeft
     )
 
-import Types exposing (Row(..), Seat)
+import Types exposing (Seat)
 
 
 seatSize : Float
@@ -46,36 +47,54 @@ marginX =
 
 marginTop : Float
 marginTop =
-    40
+    76
 
 
+chalkboardHeight : Float
+chalkboardHeight =
+    30
+
+
+{-| A green chalkboard drawn above the front row, marking which side of the
+room is the front.
+-}
+chalkboardRect : { x : Float, y : Float, width : Float, height : Float }
+chalkboardRect =
+    { x = colX 1 - 20
+    , y = 14
+    , width = (colX Types.columnsPerRow + seatSize) - colX 1 + 40
+    , height = chalkboardHeight
+    }
+
+
+{-| X position of the given column (1..columnsPerRow). Columns are grouped in
+pairs (one bench each), with a small gap within a pair and a wider aisle gap
+between benches.
+-}
 colX : Int -> Float
 colX col =
-    case col of
-        1 ->
-            marginX
+    let
+        zeroIndexed =
+            col - 1
 
-        2 ->
-            colX 1 + seatSize + benchGap
+        benchIndex =
+            zeroIndexed // 2
 
-        3 ->
-            colX 2 + seatSize + aisleGap
+        posInBench =
+            modBy 2 zeroIndexed
+    in
+    marginX
+        + toFloat benchIndex
+        * (2 * seatSize + benchGap + aisleGap)
+        + toFloat posInBench
+        * (seatSize + benchGap)
 
-        4 ->
-            colX 3 + seatSize + benchGap
 
-        _ ->
-            0
-
-
-rowY : Row -> Float
+{-| Y position of the given row (1..rowsPerBoard, 1 = front).
+-}
+rowY : Int -> Float
 rowY row =
-    case row of
-        Front ->
-            marginTop
-
-        Back ->
-            marginTop + seatSize + rowGap
+    marginTop + toFloat (row - 1) * (seatSize + rowGap)
 
 
 seatTopLeft : Seat -> ( Float, Float )
@@ -93,9 +112,9 @@ seatCenter seat =
 
 
 {-| Bounding rect for the bench holding the two seats in the given row and
-bench index (0 or 1).
+bench index (0..benchesPerRow - 1).
 -}
-benchRect : Row -> Int -> { x : Float, y : Float, width : Float, height : Float }
+benchRect : Int -> Int -> { x : Float, y : Float, width : Float, height : Float }
 benchRect row benchIndex =
     let
         firstCol =
@@ -119,17 +138,17 @@ benchRect row benchIndex =
 
 boardWidth : Float
 boardWidth =
-    colX 4 + seatSize + marginX
+    colX Types.columnsPerRow + seatSize + marginX
 
 
 bufferY : Float
 bufferY =
-    rowY Back + seatSize + 50
+    rowY Types.rowsPerBoard + seatSize + 50
 
 
 bufferHeight : Float
 bufferHeight =
-    140
+    260
 
 
 bufferRect : { x : Float, y : Float, width : Float, height : Float }
@@ -146,9 +165,12 @@ boardHeight =
     bufferY + bufferHeight + marginTop
 
 
+{-| Matches columnsPerRow so the buffer holds exactly one row's worth of
+students per line, whatever the bench count is.
+-}
 slotsPerRow : Int
 slotsPerRow =
-    4
+    Types.columnsPerRow
 
 
 slotSize : Float

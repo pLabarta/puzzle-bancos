@@ -2,16 +2,19 @@ module Types exposing
     ( Axiom
     , AxiomStatus(..)
     , Board
+    , Handedness(..)
     , Relation(..)
-    , Row(..)
     , Seat
     , Student
     , StudentId
     , allSeats
     , benchOf
+    , benchesPerRow
     , colOf
+    , columnsPerRow
     , occupantAt
     , rowOf
+    , rowsPerBoard
     )
 
 import Dict exposing (Dict)
@@ -21,24 +24,46 @@ type alias StudentId =
     Int
 
 
+type Handedness
+    = LeftHanded
+    | RightHanded
+
+
 type alias Student =
     { id : StudentId
     , name : String
     , color : String
+    , handedness : Handedness
     }
 
 
-type Row
-    = Front
-    | Back
+{-| How many rows of benches the classroom has (1 = front row).
+-}
+rowsPerBoard : Int
+rowsPerBoard =
+    2
 
 
-{-| A physical seat, addressed by row and column (1..4). Column spans across
-both benches in a row, so adjacent columns are "next to" each other even when
-they belong to different benches.
+{-| How many benches sit side by side in each row.
+-}
+benchesPerRow : Int
+benchesPerRow =
+    3
+
+
+{-| How many seat columns a row has (two seats per bench).
+-}
+columnsPerRow : Int
+columnsPerRow =
+    benchesPerRow * 2
+
+
+{-| A physical seat, addressed by row (1..rowsPerBoard, 1 = front) and column
+(1..columnsPerRow). Column spans across all benches in a row, so adjacent
+columns are "next to" each other even when they belong to different benches.
 -}
 type alias Seat =
-    { row : Row
+    { row : Int
     , col : Int
     }
 
@@ -46,27 +71,20 @@ type alias Seat =
 allSeats : List Seat
 allSeats =
     List.concatMap
-        (\r -> List.map (Seat r) (List.range 1 4))
-        [ Front, Back ]
+        (\r -> List.map (Seat r) (List.range 1 columnsPerRow))
+        (List.range 1 rowsPerBoard)
 
 
-{-| Which bench (0 or 1, within its row) a seat belongs to.
+{-| Which bench (0-indexed, within its row) a seat belongs to.
 -}
 benchOf : Seat -> Int
 benchOf seat =
     (seat.col - 1) // 2
 
 
-{-| Encode row+col as a single Int key, for use as a Dict key.
--}
 rowOf : Seat -> Int
 rowOf seat =
-    case seat.row of
-        Front ->
-            0
-
-        Back ->
-            1
+    seat.row
 
 
 colOf : Seat -> Int
@@ -75,7 +93,7 @@ colOf seat =
 
 
 {-| The board: which student occupies each seat, plus the buffer tray for
-students not currently seated. Seats are keyed by (rowIndex, col).
+students not currently seated. Seats are keyed by (row, col).
 -}
 type alias Board =
     { seats : Dict ( Int, Int ) StudentId
@@ -98,7 +116,7 @@ type Relation
     | LeftOf StudentId StudentId
     | SameBench StudentId StudentId
     | Behind StudentId StudentId
-    | FrontRow StudentId
+    | InRow StudentId Int
 
 
 type alias Axiom =

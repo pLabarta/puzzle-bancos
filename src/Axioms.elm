@@ -6,9 +6,10 @@ import Types
         ( Axiom
         , AxiomStatus(..)
         , Board
+        , Handedness(..)
         , Relation(..)
-        , Row(..)
         , Seat
+        , Student
         , StudentId
         )
 
@@ -19,17 +20,7 @@ seatOfStudent board studentId =
         |> Dict.toList
         |> List.filter (\( _, occupant ) -> occupant == studentId)
         |> List.head
-        |> Maybe.map
-            (\( ( rowIdx, col ), _ ) ->
-                { row =
-                    if rowIdx == 0 then
-                        Front
-
-                    else
-                        Back
-                , col = col
-                }
-            )
+        |> Maybe.map (\( ( row, col ), _ ) -> { row = row, col = col })
 
 
 relationValue : Board -> Relation -> Maybe Bool
@@ -47,8 +38,8 @@ relationValue board relation =
         Behind a b ->
             Maybe.map2 behind (seatOfStudent board a) (seatOfStudent board b)
 
-        FrontRow a ->
-            seatOfStudent board a |> Maybe.map (\seat -> seat.row == Front)
+        InRow a row ->
+            seatOfStudent board a |> Maybe.map (\seat -> seat.row == row)
 
 
 sameRow : Seat -> Seat -> Bool
@@ -61,19 +52,26 @@ nextTo s1 s2 =
     sameRow s1 s2 && abs (s1.col - s2.col) == 1
 
 
-leftOf : Seat -> Seat -> Bool
-leftOf s1 s2 =
-    sameRow s1 s2 && s2.col - s1.col == 1
-
-
 sameBench : Seat -> Seat -> Bool
 sameBench s1 s2 =
     sameRow s1 s2 && (s1.col - 1) // 2 == (s2.col - 1) // 2
 
 
+{-| s1 sits immediately to the left of s2, on the same two-seat bench. Unlike
+`nextTo`, this does NOT hold across the aisle between benches (e.g. the last
+seat of one bench and the first seat of the next) - "immediately to the
+left" is meant as desk-mates, not just adjacent columns.
+-}
+leftOf : Seat -> Seat -> Bool
+leftOf s1 s2 =
+    sameBench s1 s2 && s2.col - s1.col == 1
+
+
+{-| a sits directly behind b: one row further back, same column.
+-}
 behind : Seat -> Seat -> Bool
 behind s1 s2 =
-    s1.row == Back && s2.row == Front && s1.col == s2.col
+    s1.row == s2.row + 1 && s1.col == s2.col
 
 
 {-| Evaluate an axiom against the current board. Pending means one or both
@@ -93,28 +91,60 @@ axiomStatus board axiom =
                 Violated
 
 
-nameOf : (StudentId -> String) -> StudentId -> String
-nameOf lookupName id =
-    lookupName id
+rowPhrase : Int -> String
+rowPhrase row =
+    case row of
+        1 ->
+            "adelante"
+
+        2 ->
+            "atrás"
+
+        _ ->
+            "en la fila " ++ String.fromInt row
 
 
-clueText : (StudentId -> String) -> Axiom -> String
-clueText lookupName axiom =
+{-| True when seating `a` immediately to the left of `b` would make their
+writing arms collide: `a` writes with the hand facing `b` (right-handed,
+since `a` is on the left) and `b` also writes with the hand facing `a`
+(left-handed, since `b` is on the right).
+-}
+elbowsWouldClash : Student -> Student -> Bool
+elbowsWouldClash a b =
+    a.handedness == RightHanded && b.handedness == LeftHanded
+
+
+clueText : (StudentId -> Student) -> Axiom -> String
+clueText lookupStudent axiom =
     let
-        name =
-            nameOf lookupName
+        student =
+            lookupStudent
+
+        name id =
+            (student id).name
     in
     case axiom.relation of
         NextTo a b ->
             if axiom.negated then
-                name a ++ " no se sienta junto a " ++ name b ++ "."
+                name a ++ " no se sienta al lado de " ++ name b ++ "."
 
             else
                 name a ++ " y " ++ name b ++ " se sientan juntos."
 
         LeftOf a b ->
             if axiom.negated then
-                name a ++ " no se sienta inmediatamente a la izquierda de " ++ name b ++ "."
+                if elbowsWouldClash (student a) (student b) then
+                    name a
+                        ++ " no se sienta inmediatamente a la izquierda de "
+                        ++ name b
+                        ++ ": "
+                        ++ name a
+                        ++ " escribe con la derecha y "
+                        ++ name b
+                        ++ " con la izquierda, y chocarían los codos."
+
+                else
+                    name a ++ " no se sienta inmediatamente a la izquierda de " ++ name b ++ "."
 
             else
                 name a ++ " se sienta inmediatamente a la izquierda de " ++ name b ++ "."
@@ -133,9 +163,9 @@ clueText lookupName axiom =
             else
                 name a ++ " se sienta justo detrás de " ++ name b ++ "."
 
-        FrontRow a ->
+        InRow a row ->
             if axiom.negated then
-                name a ++ " no se sienta en la fila delantera."
+                name a ++ " no se sienta " ++ rowPhrase row ++ "."
 
             else
-                name a ++ " se sienta en la fila delantera."
+                name a ++ " se sienta " ++ rowPhrase row ++ "."

@@ -1,0 +1,146 @@
+[
+  {
+    "rel": "inRow",
+    "a": "Mateo",
+    "b": 1,
+    "negated": false
+  },
+  {
+    "rel": "inRow",
+    "a": "Lucia",
+    "b": 1,
+    "negated": false
+  },
+  {
+    "rel": "inRow",
+    "a": "Nicolas",
+    "b": 1,
+    "negated": false
+  },
+  {
+    "rel": "inRow",
+    "a": "Sofia",
+    "b": 1,
+    "negated": false
+  },
+  {
+    "rel": "inRow",
+    "a": "Diego",
+    "b": 1,
+    "negated": false
+  },
+  {
+    "rel": "inRow",
+    "a": "Camila",
+    "b": 1,
+    "negated": false
+  },
+  {
+    "a": "Mateo",
+    "b": "Nicolas",
+    "negated": true,
+    "rel": "nextTo"
+  },
+  {
+    "a": "Mateo",
+    "b": "Sofia",
+    "negated": true,
+    "rel": "nextTo"
+  },
+  {
+    "a": "Mateo",
+    "b": "Diego",
+    "negated": true,
+    "rel": "nextTo"
+  },
+  {
+    "a": "Mateo",
+    "b": "Camila",
+    "negated": true,
+    "rel": "nextTo"
+  },
+  {
+    "a": "Lucia",
+    "b": "Mateo",
+    "negated": true,
+    "rel": "leftOf"
+  },
+  {
+    "a": "Nicolas",
+    "b": "Diego",
+    "negated": true,
+    "rel": "nextTo"
+  },
+  {
+    "a": "Nicolas",
+    "b": "Camila",
+    "negated": true,
+    "rel": "nextTo"
+  },
+  {
+    "a": "Sofia",
+    "b": "Nicolas",
+    "negated": true,
+    "rel": "leftOf"
+  },
+  {
+    "a": "Sofia",
+    "b": "Camila",
+    "negated": true,
+    "rel": "nextTo"
+  },
+  {
+    "a": "Bruno",
+    "b": "Valentina",
+    "negated": true,
+    "rel": "nextTo"
+  },
+  {
+    "a": "Bruno",
+    "b": "Emma",
+    "negated": true,
+    "rel": "nextTo"
+  },
+  {
+    "a": "Bruno",
+    "b": "Joaquin",
+    "negated": true,
+    "rel": "nextTo"
+  },
+  {
+    "a": "Bruno",
+    "b": "Valeria",
+    "negated": true,
+    "rel": "nextTo"
+  },
+  {
+    "a": "Martina",
+    "b": "Bruno",
+    "negated": true,
+    "rel": "leftOf"
+  },
+  {
+    "a": "Valentina",
+    "b": "Joaquin",
+    "negated": true,
+    "rel": "nextTo"
+  },
+  {
+    "a": "Valentina",
+    "b": "Valeria",
+    "negated": true,
+    "rel": "nextTo"
+  },
+  {
+    "a": "Emma",
+    "b": "Valentina",
+    "negated": true,
+    "rel": "leftOf"
+  },
+  {
+    "a": "Emma",
+    "b": "Valeria",
+    "negated": true,
+    "rel": "nextTo"
+  }
+]
