@@ -5,7 +5,7 @@
   "main": "index.js",
   "scripts": {
     "dev": "elm make src/Main.elm --output=elm.js --debug",
-    "build": "rm -rf dist && mkdir -p dist && elm make src/Main.elm --output=dist/elm.js --optimize && cp index.html dist/index.html",
+    "build": "rm -rf dist && mkdir -p dist && elm make src/Main.elm --output=dist/elm.js --optimize && cp index.html logo.svg oxford-logo-white.png dist/",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [],
