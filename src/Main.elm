@@ -2,21 +2,17 @@ module Main exposing (main)
 
 import Axioms
 import Browser
-import Browser.Dom as Dom
-import Browser.Events
 import Dict
 import Html exposing (Html)
 import Html.Attributes as HA
 import Html.Events as HE
-import Json.Decode as Decode
-import Layout exposing (DropTarget(..))
+import Layout
 import Puzzle
 import Random
 import Set exposing (Set)
 import Svg exposing (Svg)
 import Svg.Attributes as SA
 import Svg.Events as SE
-import Task
 import Types exposing (Axiom, AxiomStatus(..), Board, Seat, Student, StudentId)
 
 
@@ -34,17 +30,23 @@ main =
 -- MODEL
 
 
-type alias DragState =
+{-| Where a student was before they got picked up, so a cancelled selection
+(or a swap) knows where to put them back.
+-}
+type PreviousLocation
+    = SeatLocation Seat
+    | BufferLocation
+
+
+type alias Selection =
     { studentId : StudentId
-    , x : Float
-    , y : Float
+    , origin : PreviousLocation
     }
 
 
 type alias Model =
     { board : Board
-    , boardOrigin : { x : Float, y : Float }
-    , drag : Maybe DragState
+    , selected : Maybe Selection
     , discoveredAxioms : Set Int
     , cluesOpen : Bool
     }
@@ -74,15 +76,11 @@ shuffle list =
 init : () -> ( Model, Cmd Msg )
 init _ =
     ( { board = initialBoard
-      , boardOrigin = { x = 0, y = 0 }
-      , drag = Nothing
+      , selected = Nothing
       , discoveredAxioms = Set.empty
       , cluesOpen = False
       }
-    , Cmd.batch
-        [ Task.attempt GotBoardOrigin (Dom.getElement "board")
-        , Random.generate ShuffledBuffer (shuffle initialBoard.buffer)
-        ]
+    , Random.generate ShuffledBuffer (shuffle initialBoard.buffer)
     )
 
 
@@ -91,30 +89,16 @@ init _ =
 
 
 type Msg
-    = GotBoardOrigin (Result Dom.Error Dom.Element)
-    | ShuffledBuffer (List StudentId)
-    | StudentMouseDown StudentId Float Float
-    | MouseMoved Float Float
-    | MouseUp
+    = ShuffledBuffer (List StudentId)
+    | StudentClicked StudentId
+    | SeatClicked Seat
+    | BufferAreaClicked
     | ToggleClues
 
 
 update : Msg -> Model -> ( Model, Cmd Msg )
 update msg model =
     case msg of
-        GotBoardOrigin result ->
-            case result of
-                Ok element ->
-                    ( { model
-                        | boardOrigin =
-                            { x = element.element.x, y = element.element.y }
-                      }
-                    , Cmd.none
-                    )
-
-                Err _ ->
-                    ( model, Cmd.none )
-
         ShuffledBuffer shuffledIds ->
             let
                 board =
@@ -122,55 +106,90 @@ update msg model =
             in
             ( { model | board = { board | buffer = shuffledIds } }, Cmd.none )
 
-        StudentMouseDown studentId clientX clientY ->
-            ( { model
-                | drag =
-                    Just
-                        { studentId = studentId
-                        , x = clientX - model.boardOrigin.x
-                        , y = clientY - model.boardOrigin.y
-                        }
-              }
-            , Cmd.none
-            )
+        StudentClicked studentId ->
+            ( selectOrSwap studentId model, Cmd.none )
 
-        MouseMoved clientX clientY ->
-            case model.drag of
-                Nothing ->
-                    ( model, Cmd.none )
+        SeatClicked seat ->
+            ( placeSelected (SeatLocation seat) model, Cmd.none )
 
-                Just drag ->
-                    ( { model
-                        | drag =
-                            Just
-                                { drag
-                                    | x = clientX - model.boardOrigin.x
-                                    , y = clientY - model.boardOrigin.y
-                                }
-                      }
-                    , Cmd.none
-                    )
-
-        MouseUp ->
-            case model.drag of
-                Nothing ->
-                    ( model, Cmd.none )
-
-                Just drag ->
-                    let
-                        newBoard =
-                            dropStudent drag.studentId ( drag.x, drag.y ) model.board
-                    in
-                    ( { model
-                        | board = newBoard
-                        , drag = Nothing
-                        , discoveredAxioms = discoverViolatedAxioms newBoard model.discoveredAxioms
-                      }
-                    , Cmd.none
-                    )
+        BufferAreaClicked ->
+            ( placeSelected BufferLocation model, Cmd.none )
 
         ToggleClues ->
             ( { model | cluesOpen = not model.cluesOpen }, Cmd.none )
+
+
+{-| Click on a student. With nobody selected, pick them up: remove them from
+the board and remember where they were. With someone already selected,
+clicking that same student again cancels the selection and returns them
+home; clicking a different student swaps the two - the clicked student is
+picked up in turn, and the previously-selected student takes their old
+spot (seat or waiting zone).
+-}
+selectOrSwap : StudentId -> Model -> Model
+selectOrSwap studentId model =
+    case model.selected of
+        Nothing ->
+            { model
+                | board = removeStudent studentId model.board
+                , selected = Just { studentId = studentId, origin = previousLocation studentId model.board }
+            }
+
+        Just sel ->
+            if sel.studentId == studentId then
+                { model
+                    | board = placeAt sel.origin studentId model.board
+                    , selected = Nothing
+                }
+
+            else
+                let
+                    otherOrigin =
+                        previousLocation studentId model.board
+
+                    newBoard =
+                        model.board
+                            |> removeStudent studentId
+                            |> placeAt otherOrigin sel.studentId
+                in
+                { model
+                    | board = newBoard
+                    , selected = Just { studentId = studentId, origin = otherOrigin }
+                    , discoveredAxioms = discoverViolatedAxioms newBoard model.discoveredAxioms
+                }
+
+
+{-| Click on a seat or the waiting zone: if a student is selected, place them
+there. An occupied seat's click never reaches here - the student sitting in
+it captures the click first (see `StudentClicked`) - so this only ever
+fires for an empty destination.
+-}
+placeSelected : PreviousLocation -> Model -> Model
+placeSelected destination model =
+    case model.selected of
+        Nothing ->
+            model
+
+        Just sel ->
+            let
+                newBoard =
+                    placeAt destination sel.studentId model.board
+            in
+            { model
+                | board = newBoard
+                , selected = Nothing
+                , discoveredAxioms = discoverViolatedAxioms newBoard model.discoveredAxioms
+            }
+
+
+placeAt : PreviousLocation -> StudentId -> Board -> Board
+placeAt location studentId board =
+    case location of
+        SeatLocation seat ->
+            { board | seats = Dict.insert (seatKey seat) studentId board.seats }
+
+        BufferLocation ->
+            { board | buffer = studentId :: board.buffer }
 
 
 {-| Axioms start hidden - a clue is only revealed once the board violates it,
@@ -210,11 +229,6 @@ seatFromKey ( row, col ) =
     { row = row, col = col }
 
 
-type PreviousLocation
-    = SeatLocation Seat
-    | BufferLocation
-
-
 previousLocation : StudentId -> Board -> PreviousLocation
 previousLocation studentId board =
     board.seats
@@ -225,85 +239,13 @@ previousLocation studentId board =
         |> Maybe.withDefault BufferLocation
 
 
-dropStudent : StudentId -> ( Float, Float ) -> Board -> Board
-dropStudent studentId point board =
-    let
-        boardWithoutStudent =
-            removeStudent studentId board
-    in
-    case Layout.hitTest point of
-        OnSeat seat ->
-            case Dict.get (seatKey seat) boardWithoutStudent.seats of
-                Just occupant ->
-                    let
-                        swappedBoard =
-                            { boardWithoutStudent
-                                | seats = Dict.insert (seatKey seat) studentId boardWithoutStudent.seats
-                            }
-                    in
-                    case previousLocation studentId board of
-                        SeatLocation prevSeat ->
-                            { swappedBoard
-                                | seats = Dict.insert (seatKey prevSeat) occupant swappedBoard.seats
-                            }
-
-                        BufferLocation ->
-                            { swappedBoard | buffer = occupant :: swappedBoard.buffer }
-
-                Nothing ->
-                    { boardWithoutStudent
-                        | seats = Dict.insert (seatKey seat) studentId boardWithoutStudent.seats
-                    }
-
-        InBuffer ->
-            { boardWithoutStudent | buffer = studentId :: boardWithoutStudent.buffer }
-
-        Nowhere ->
-            board
-
-
 
 -- SUBSCRIPTIONS
 
 
 subscriptions : Model -> Sub Msg
-subscriptions model =
-    case model.drag of
-        Nothing ->
-            Sub.none
-
-        Just _ ->
-            Sub.batch
-                [ Browser.Events.onMouseMove (Decode.map2 MouseMoved clientXDecoder clientYDecoder)
-                , Browser.Events.onMouseUp (Decode.succeed MouseUp)
-                ]
-
-
-clientXDecoder : Decode.Decoder Float
-clientXDecoder =
-    Decode.field "clientX" Decode.float
-
-
-clientYDecoder : Decode.Decoder Float
-clientYDecoder =
-    Decode.field "clientY" Decode.float
-
-
-{-| Touch events don't carry clientX/clientY directly - they're on the first
-entry of the `touches` array. Touch targeting "locks" to whichever element
-received the `touchstart`, so a touchmove/touchend handler placed on the
-board keeps firing for a drag even once the finger has moved over other
-elements (unlike mouse events, which don't need this).
--}
-touchPointDecoder : Decode.Decoder ( Float, Float )
-touchPointDecoder =
-    Decode.field "touches"
-        (Decode.index 0
-            (Decode.map2 Tuple.pair
-                (Decode.field "clientX" Decode.float)
-                (Decode.field "clientY" Decode.float)
-            )
-        )
+subscriptions _ =
+    Sub.none
 
 
 
@@ -336,11 +278,14 @@ view model =
         [ HA.style "font-family" "sans-serif"
         , HA.style "background" "#16181c"
         , HA.style "min-height" "100vh"
+
+        -- The board is sized in vw and can afford to sit a little under
+        -- the drawer's edge (it has its own inner margin there); this just
+        -- guards against a sub-pixel overflow causing page-wide scroll.
+        , HA.style "overflow-x" "hidden"
         ]
         [ Html.div
-            [ HA.style "padding" "24px"
-            , HA.style "padding-right" "88px"
-            ]
+            [ HA.style "padding" "24px" ]
             [ boardView model
             , if allSolved model.board then
                 Html.p
@@ -359,36 +304,28 @@ view model =
 boardView : Model -> Svg Msg
 boardView model =
     Svg.svg
-        (List.concat
-            [ [ SA.id "board"
-              , SA.width (String.fromFloat Layout.boardWidth)
-              , SA.height (String.fromFloat Layout.boardHeight)
-              , SA.viewBox
-                    ("0 0 "
-                        ++ String.fromFloat Layout.boardWidth
-                        ++ " "
-                        ++ String.fromFloat Layout.boardHeight
-                    )
-              , SA.style "background:#24262b;border:1px solid #3a3d44;touch-action:none;"
-              ]
-            , if model.drag == Nothing then
-                []
-
-              else
-                [ HE.preventDefaultOn "touchmove"
-                    (touchPointDecoder |> Decode.map (\( x, y ) -> ( MouseMoved x y, True )))
-                , SE.on "touchend" (Decode.succeed MouseUp)
-                , SE.on "touchcancel" (Decode.succeed MouseUp)
-                ]
-            ]
-        )
+        [ SA.width (String.fromFloat Layout.boardWidth)
+        , SA.height (String.fromFloat Layout.boardHeight)
+        , SA.viewBox
+            ("0 0 "
+                ++ String.fromFloat Layout.boardWidth
+                ++ " "
+                ++ String.fromFloat Layout.boardHeight
+            )
+        , SA.style
+            ("background:#24262b;border:1px solid #3a3d44;"
+                ++ "display:block;margin:0 auto;"
+                ++ "width:90vw;max-width:1100px;min-width:280px;height:auto;"
+            )
+        ]
         (List.concat
             [ [ chalkboardView ]
             , benchesView
-            , [ bufferZoneView ]
+            , seatTargetsView model
+            , [ selectedZoneView model ]
+            , [ bufferZoneView model ]
             , seatedStudentsView model.board
             , bufferedStudentsView model.board
-            , dragGhostView model
             ]
         )
 
@@ -449,8 +386,99 @@ benchesView =
         (List.range 1 Types.rowsPerBoard)
 
 
-bufferZoneView : Svg Msg
-bufferZoneView =
+{-| One invisible click target per seat, drawn under the seated-students
+layer so an occupied seat's click is captured by the student sitting there
+instead (see `studentCircle`). Only rendered visible (a dashed highlight)
+over empty seats while something is selected, to hint where it can go.
+-}
+seatTargetsView : Model -> List (Svg Msg)
+seatTargetsView model =
+    List.map (seatTargetView model) Types.allSeats
+
+
+seatTargetView : Model -> Seat -> Svg Msg
+seatTargetView model seat =
+    let
+        ( cx, cy ) =
+            Layout.seatCenter seat
+
+        occupied =
+            Dict.member (seatKey seat) model.board.seats
+
+        highlight =
+            model.selected /= Nothing && not occupied
+    in
+    Svg.circle
+        [ SA.cx (String.fromFloat cx)
+        , SA.cy (String.fromFloat cy)
+        , SA.r (String.fromFloat Layout.seatRadius)
+        , SA.fill "transparent"
+        , SA.stroke
+            (if highlight then
+                "#2a9d8f"
+
+             else
+                "transparent"
+            )
+        , SA.strokeWidth "2"
+        , SA.strokeDasharray "4,3"
+        , SA.style "cursor:pointer;"
+        , SE.onClick (SeatClicked seat)
+        ]
+        []
+
+
+{-| The single-slot zone between the benches and the waiting zone, holding
+whichever student is currently selected. Clicking that student again
+(handled by `studentCircle`, same as anywhere else) cancels the selection.
+-}
+selectedZoneView : Model -> Svg Msg
+selectedZoneView model =
+    let
+        rect =
+            Layout.selectedRect
+
+        ( cx, cy ) =
+            Layout.selectedSlotCenter
+    in
+    Svg.g []
+        [ Svg.rect
+            [ SA.x (String.fromFloat rect.x)
+            , SA.y (String.fromFloat rect.y)
+            , SA.width (String.fromFloat rect.width)
+            , SA.height (String.fromFloat rect.height)
+            , SA.rx "6"
+            , SA.fill "#2a2d33"
+            , SA.stroke
+                (if model.selected == Nothing then
+                    "#53565c"
+
+                 else
+                    "#2a9d8f"
+                )
+            , SA.strokeWidth "2"
+            , SA.strokeDasharray "6,4"
+            ]
+            []
+        , Svg.text_
+            [ SA.x (String.fromFloat (rect.x + 12))
+            , SA.y (String.fromFloat (rect.y + 20))
+            , SA.fill "#9aa0a6"
+            , SA.fontSize "13"
+            , SA.style "pointer-events:none;"
+            ]
+            [ Svg.text "Seleccionado" ]
+        , case model.selected of
+            Just sel ->
+                studentCircle sel.studentId cx cy
+
+            Nothing ->
+                Svg.text ""
+        ]
+
+
+bufferZoneView : Model -> Svg Msg
+bufferZoneView model =
     Svg.g []
         [ Svg.rect
             [ SA.x (String.fromFloat Layout.bufferRect.x)
@@ -459,8 +487,17 @@ bufferZoneView =
             , SA.height (String.fromFloat Layout.bufferRect.height)
             , SA.rx "6"
             , SA.fill "#2a2d33"
-            , SA.stroke "#53565c"
+            , SA.stroke
+                (if model.selected == Nothing then
+                    "#53565c"
+
+                 else
+                    "#2a9d8f"
+                )
+            , SA.strokeWidth "2"
             , SA.strokeDasharray "6,4"
+            , SA.style "cursor:pointer;"
+            , SE.onClick BufferAreaClicked
             ]
             []
         , Svg.text_
@@ -468,6 +505,7 @@ bufferZoneView =
             , SA.y (String.fromFloat (Layout.bufferRect.y + 20))
             , SA.fill "#9aa0a6"
             , SA.fontSize "13"
+            , SA.style "pointer-events:none;"
             ]
             [ Svg.text "Zona de espera" ]
         ]
@@ -500,23 +538,8 @@ bufferedStudentsView board =
             )
 
 
-dragGhostView : Model -> List (Svg Msg)
-dragGhostView model =
-    case model.drag of
-        Nothing ->
-            []
-
-        Just drag ->
-            [ studentCircleAt drag.studentId drag.x drag.y True ]
-
-
 studentCircle : StudentId -> Float -> Float -> Svg Msg
 studentCircle studentId cx cy =
-    studentCircleAt studentId cx cy False
-
-
-studentCircleAt : StudentId -> Float -> Float -> Bool -> Svg Msg
-studentCircleAt studentId cx cy isGhost =
     let
         student =
             findStudent studentId
@@ -526,24 +549,11 @@ studentCircleAt studentId cx cy isGhost =
 
         name =
             student |> Maybe.map .name |> Maybe.withDefault "?"
-
-        mouseDownDecoder =
-            Decode.map2 (StudentMouseDown studentId) clientXDecoder clientYDecoder
-
-        touchStartDecoder =
-            touchPointDecoder
-                |> Decode.map (\( x, y ) -> ( StudentMouseDown studentId x y, True ))
     in
     Svg.g
-        (if isGhost then
-            [ SA.style "pointer-events:none;", SA.opacity "0.85" ]
-
-         else
-            [ SE.on "mousedown" mouseDownDecoder
-            , HE.preventDefaultOn "touchstart" touchStartDecoder
-            , SA.style "cursor:grab;touch-action:none;"
-            ]
-        )
+        [ SE.onClick (StudentClicked studentId)
+        , SA.style "cursor:pointer;"
+        ]
         [ Svg.circle
             [ SA.cx (String.fromFloat cx)
             , SA.cy (String.fromFloat cy)

@@ -1,15 +1,15 @@
 module Layout exposing
-    ( DropTarget(..)
-    , benchRect
+    ( benchRect
     , boardHeight
     , boardWidth
     , bufferRect
     , bufferSlotCenter
     , chalkboardRect
-    , hitTest
     , seatCenter
     , seatRadius
     , seatTopLeft
+    , selectedRect
+    , selectedSlotCenter
     )
 
 import Types exposing (Seat)
@@ -141,9 +141,34 @@ boardWidth =
     colX Types.columnsPerRow + seatSize + marginX
 
 
+selectedZoneHeight : Float
+selectedZoneHeight =
+    110
+
+
+{-| A single-slot zone between the benches and the waiting zone, holding
+whichever student is currently selected (clicked, awaiting a destination
+click).
+-}
+selectedRect : { x : Float, y : Float, width : Float, height : Float }
+selectedRect =
+    { x = marginX / 2
+    , y = rowY Types.rowsPerBoard + seatSize + 50
+    , width = boardWidth - marginX
+    , height = selectedZoneHeight
+    }
+
+
+selectedSlotCenter : ( Float, Float )
+selectedSlotCenter =
+    ( selectedRect.x + selectedRect.width / 2
+    , selectedRect.y + 24 + seatSize / 2
+    )
+
+
 bufferY : Float
 bufferY =
-    rowY Types.rowsPerBoard + seatSize + 50
+    selectedRect.y + selectedRect.height + 30
 
 
 bufferHeight : Float
@@ -194,50 +219,3 @@ bufferSlotCenter index =
             bufferRect.y + 24 + toFloat row * slotSize + seatSize / 2
     in
     ( x, y )
-
-
-type DropTarget
-    = OnSeat Seat
-    | InBuffer
-    | Nowhere
-
-
-{-| Determine what's under a given point: a seat, the buffer zone, or
-nothing.
--}
-hitTest : ( Float, Float ) -> DropTarget
-hitTest ( px, py ) =
-    let
-        seatHit =
-            Types.allSeats
-                |> List.filter
-                    (\seat ->
-                        let
-                            ( x, y ) =
-                                seatTopLeft seat
-                        in
-                        px >= x && px <= x + seatSize && py >= y && py <= y + seatSize
-                    )
-                |> List.head
-    in
-    case seatHit of
-        Just seat ->
-            OnSeat seat
-
-        Nothing ->
-            if
-                px
-                    >= bufferRect.x
-                    && px
-                    <= bufferRect.x
-                    + bufferRect.width
-                    && py
-                    >= bufferRect.y
-                    && py
-                    <= bufferRect.y
-                    + bufferRect.height
-            then
-                InBuffer
-
-            else
-                Nowhere
