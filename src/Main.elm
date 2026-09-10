@@ -1,4 +1,4 @@
-module Main exposing (main)
+port module Main exposing (main)
 
 import Axioms
 import Browser
@@ -15,6 +15,12 @@ import Svg exposing (Svg)
 import Svg.Attributes as SA
 import Svg.Events as SE
 import Types exposing (Axiom, AxiomStatus(..), Board, Seat, Student, StudentId)
+
+
+{-| Persists the drawer text size to `localStorage` (see index.html /
+debug.html), so it survives a reload.
+-}
+port saveDrawerFontSize : Int -> Cmd msg
 
 
 {-| Inlined as a data URI (rather than referencing the file by path) so the
@@ -158,7 +164,33 @@ type alias Model =
     , discoveredAxioms : Set Int
     , cluesOpen : Bool
     , debug : Bool
+    , drawerFontSize : Int
     }
+
+
+defaultDrawerFontSize : Int
+defaultDrawerFontSize =
+    20
+
+
+minDrawerFontSize : Int
+minDrawerFontSize =
+    14
+
+
+maxDrawerFontSize : Int
+maxDrawerFontSize =
+    32
+
+
+drawerFontSizeStep : Int
+drawerFontSizeStep =
+    2
+
+
+clampDrawerFontSize : Int -> Int
+clampDrawerFontSize =
+    clamp minDrawerFontSize maxDrawerFontSize
 
 
 initialBoard : Board
@@ -198,13 +230,23 @@ shuffle list =
             )
 
 
-{-| Missing/`null`/non-boolean flags (an `init({ node })` call with no
-`flags` key at all included) quietly mean "not debug" rather than crashing.
+{-| Flags are `{ debug, drawerFontSize }` (see index.html / debug.html), but
+every field is decoded independently and defaulted rather than as one
+strict record - so a missing `flags` key entirely, a `null`, an old bare
+boolean, or a corrupt `drawerFontSize` in localStorage all degrade
+gracefully instead of crashing init.
 -}
 initDebugMode : Decode.Value -> Bool
 initDebugMode flags =
-    Decode.decodeValue Decode.bool flags
-        |> Result.withDefault False
+    Decode.decodeValue (Decode.field "debug" Decode.bool) flags
+        |> Result.withDefault (Decode.decodeValue Decode.bool flags |> Result.withDefault False)
+
+
+initDrawerFontSize : Decode.Value -> Int
+initDrawerFontSize flags =
+    Decode.decodeValue (Decode.field "drawerFontSize" Decode.int) flags
+        |> Result.map clampDrawerFontSize
+        |> Result.withDefault defaultDrawerFontSize
 
 
 init : Decode.Value -> ( Model, Cmd Msg )
@@ -216,6 +258,7 @@ init flags =
       , discoveredAxioms = Set.empty
       , cluesOpen = False
       , debug = initDebugMode flags
+      , drawerFontSize = initDrawerFontSize flags
       }
     , Random.generate ShuffledBuffer (shuffle initialBoard.buffer)
     )
@@ -235,6 +278,8 @@ type Msg
     | TeamSelected Team
     | ContinuarClicked
     | AutoSolve
+    | IncreaseDrawerFontSize
+    | DecreaseDrawerFontSize
 
 
 update : Msg -> Model -> ( Model, Cmd Msg )
@@ -273,6 +318,21 @@ update msg model =
                 |> advanceIfSolved solvedBoard
             , Cmd.none
             )
+
+        IncreaseDrawerFontSize ->
+            setDrawerFontSize (model.drawerFontSize + drawerFontSizeStep) model
+
+        DecreaseDrawerFontSize ->
+            setDrawerFontSize (model.drawerFontSize - drawerFontSizeStep) model
+
+
+setDrawerFontSize : Int -> Model -> ( Model, Cmd Msg )
+setDrawerFontSize size model =
+    let
+        newSize =
+            clampDrawerFontSize size
+    in
+    ( { model | drawerFontSize = newSize }, saveDrawerFontSize newSize )
 
 
 {-| Click on a student. With nobody selected, pick them up: remove them from
@@ -636,7 +696,7 @@ playingView model =
                 ]
             )
             [ boardView model ]
-        , cluesDrawer model.board model.discoveredAxioms model.cluesOpen model.debug
+        , cluesDrawer model.board model.discoveredAxioms model.cluesOpen model.debug model.drawerFontSize
         ]
 
 
@@ -645,8 +705,8 @@ for reaching the winning screen without playing through the puzzle. Lives
 in the clues drawer rather than the play area since it's a debug tool, not
 part of the game itself.
 -}
-debugAutoSolveButton : Html Msg
-debugAutoSolveButton =
+debugAutoSolveButton : Int -> Html Msg
+debugAutoSolveButton fontSize =
     Html.button
         [ HE.onClick AutoSolve
         , HA.style "width" "100%"
@@ -657,7 +717,7 @@ debugAutoSolveButton =
         , HA.style "border" "none"
         , HA.style "border-radius" "8px"
         , HA.style "padding" "10px 12px"
-        , HA.style "font-size" "20px"
+        , HA.style "font-size" (String.fromInt fontSize ++ "px")
         , HA.style "font-weight" "bold"
         , HA.style "font-family" "inherit"
         , HA.style "cursor" "pointer"
@@ -973,8 +1033,8 @@ discoveredCounts board discoveredAxioms =
             { ok = 0, failing = 0 }
 
 
-cluesDrawer : Board -> Set Int -> Bool -> Bool -> Html Msg
-cluesDrawer board discoveredAxioms isOpen debug =
+cluesDrawer : Board -> Set Int -> Bool -> Bool -> Int -> Html Msg
+cluesDrawer board discoveredAxioms isOpen debug fontSize =
     let
         counts =
             discoveredCounts board discoveredAxioms
@@ -1011,17 +1071,17 @@ cluesDrawer board discoveredAxioms isOpen debug =
                 [ HE.onClick ToggleClues, HA.style "cursor" "pointer" ]
             ]
         )
-        [ drawerHeader counts isOpen
+        [ drawerHeader counts isOpen fontSize
         , if isOpen then
-            cluesList board discoveredAxioms debug
+            cluesList board discoveredAxioms debug fontSize
 
           else
             Html.text ""
         ]
 
 
-drawerHeader : { ok : Int, failing : Int } -> Bool -> Html Msg
-drawerHeader counts isOpen =
+drawerHeader : { ok : Int, failing : Int } -> Bool -> Int -> Html Msg
+drawerHeader counts isOpen fontSize =
     Html.div
         [ HA.style "display" "flex"
         , HA.style "align-items" "center"
@@ -1037,7 +1097,7 @@ drawerHeader counts isOpen =
             Html.h3
                 [ HA.style "margin" "0"
                 , HA.style "color" "#ffffff"
-                , HA.style "font-size" "20px"
+                , HA.style "font-size" (String.fromInt fontSize ++ "px")
                 ]
                 [ Html.text "Pistas" ]
 
@@ -1052,8 +1112,8 @@ drawerHeader counts isOpen =
                 HA.style "flex-direction" "column"
             , HA.style "gap" "8px"
             ]
-            [ countBadge "✓" counts.ok "#2a9d8f"
-            , countBadge "✗" counts.failing "#e63946"
+            [ countBadge "✓" counts.ok "#2a9d8f" fontSize
+            , countBadge "✗" counts.failing "#e63946" fontSize
             ]
         , if isOpen then
             -- Expanded: only this button collapses it, so clicking around
@@ -1064,7 +1124,7 @@ drawerHeader counts isOpen =
                 , HA.style "border" "none"
                 , HA.style "color" "#e3e1dc"
                 , HA.style "cursor" "pointer"
-                , HA.style "font-size" "20px"
+                , HA.style "font-size" (String.fromInt fontSize ++ "px")
                 , HA.style "padding" "4px"
                 , HA.attribute "aria-label" "Cerrar pistas"
                 ]
@@ -1076,30 +1136,30 @@ drawerHeader counts isOpen =
             -- click handler or the click would bubble and toggle twice.
             Html.span
                 [ HA.style "color" "#e3e1dc"
-                , HA.style "font-size" "20px"
+                , HA.style "font-size" (String.fromInt fontSize ++ "px")
                 , HA.style "padding" "4px"
                 ]
                 [ Html.text "‹" ]
         ]
 
 
-countBadge : String -> Int -> String -> Html Msg
-countBadge icon count color =
+countBadge : String -> Int -> String -> Int -> Html Msg
+countBadge icon count color fontSize =
     Html.div
         [ HA.style "display" "flex"
         , HA.style "align-items" "center"
         , HA.style "gap" "4px"
         , HA.style "color" color
         , HA.style "font-weight" "bold"
-        , HA.style "font-size" "20px"
+        , HA.style "font-size" (String.fromInt fontSize ++ "px")
         ]
         [ Html.span [] [ Html.text icon ]
         , Html.span [] [ Html.text (String.fromInt count) ]
         ]
 
 
-cluesList : Board -> Set Int -> Bool -> Html Msg
-cluesList board discoveredAxioms debug =
+cluesList : Board -> Set Int -> Bool -> Int -> Html Msg
+cluesList board discoveredAxioms debug fontSize =
     let
         discovered =
             Puzzle.axioms
@@ -1113,7 +1173,7 @@ cluesList board discoveredAxioms debug =
         [ if List.isEmpty discovered then
             Html.p
                 [ HA.style "color" "#9aa0a6"
-                , HA.style "font-size" "20px"
+                , HA.style "font-size" (String.fromInt fontSize ++ "px")
                 ]
                 [ Html.text "Las pistas se revelan cuando algo no cuadra. Prueba a sentar a alguien." ]
 
@@ -1122,17 +1182,18 @@ cluesList board discoveredAxioms debug =
                 [ HA.style "list-style" "none"
                 , HA.style "padding" "0"
                 ]
-                (List.map (\( _, axiom ) -> clueItem board axiom) discovered)
+                (List.map (\( _, axiom ) -> clueItem board axiom fontSize) discovered)
         , if debug then
-            debugAutoSolveButton
+            debugAutoSolveButton fontSize
 
           else
             Html.text ""
+        , fontSizeControls fontSize
         ]
 
 
-clueItem : Board -> Axiom -> Html Msg
-clueItem board axiom =
+clueItem : Board -> Axiom -> Int -> Html Msg
+clueItem board axiom fontSize =
     let
         status =
             Axioms.axiomStatus board axiom
@@ -1151,6 +1212,65 @@ clueItem board axiom =
     Html.li
         [ HA.style "color" color
         , HA.style "margin-bottom" "6px"
-        , HA.style "font-size" "20px"
+        , HA.style "font-size" (String.fromInt fontSize ++ "px")
         ]
         [ Html.text (icon ++ " " ++ Axioms.clueText studentOrPlaceholder axiom) ]
+
+
+{-| Increase/decrease buttons for the drawer's text size, at the bottom of
+the Pistas panel. The chosen size is saved to localStorage (via the
+`saveDrawerFontSize` port) so it persists across reloads.
+-}
+fontSizeControls : Int -> Html Msg
+fontSizeControls fontSize =
+    Html.div
+        [ HA.style "display" "flex"
+        , HA.style "align-items" "center"
+        , HA.style "justify-content" "center"
+        , HA.style "gap" "12px"
+        , HA.style "margin-top" "16px"
+        , HA.style "padding-top" "12px"
+        , HA.style "border-top" "1px solid #3a3d44"
+        ]
+        [ fontSizeButton "A−" DecreaseDrawerFontSize (fontSize <= minDrawerFontSize) "Reducir texto"
+        , Html.span
+            [ HA.style "color" "#9aa0a6"
+            , HA.style "font-size" "13px"
+            , HA.style "min-width" "36px"
+            , HA.style "text-align" "center"
+            ]
+            [ Html.text (String.fromInt fontSize ++ "px") ]
+        , fontSizeButton "A+" IncreaseDrawerFontSize (fontSize >= maxDrawerFontSize) "Agrandar texto"
+        ]
+
+
+fontSizeButton : String -> Msg -> Bool -> String -> Html Msg
+fontSizeButton label msg isDisabled label_ =
+    Html.button
+        [ HE.onClick msg
+        , HA.disabled isDisabled
+        , HA.attribute "aria-label" label_
+        , HA.style "background" "#2a2d33"
+        , HA.style "color" "#e3e1dc"
+        , HA.style "border" "1px solid #53565c"
+        , HA.style "border-radius" "6px"
+        , HA.style "width" "36px"
+        , HA.style "height" "36px"
+        , HA.style "font-size" "14px"
+        , HA.style "font-weight" "bold"
+        , HA.style "cursor"
+            (if isDisabled then
+                "default"
+
+             else
+                "pointer"
+            )
+        , HA.style "opacity"
+            (if isDisabled then
+                "0.4"
+
+             else
+                "1"
+            )
+        ]
+        [ Html.text label ]

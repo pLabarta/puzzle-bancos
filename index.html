@@ -12,7 +12,27 @@
   <div id="app"></div>
   <script src="elm.js"></script>
   <script>
-    var app = Elm.Main.init({ node: document.getElementById("app"), flags: false });
+    var flags = { debug: false };
+    try {
+      var storedFontSize = parseInt(localStorage.getItem("drawerFontSize"), 10);
+      if (!isNaN(storedFontSize)) {
+        flags.drawerFontSize = storedFontSize;
+      }
+    } catch (e) {
+      // localStorage unavailable (private mode, etc.) - Elm falls back to the default.
+    }
+
+    var app = Elm.Main.init({ node: document.getElementById("app"), flags: flags });
+
+    if (app.ports && app.ports.saveDrawerFontSize) {
+      app.ports.saveDrawerFontSize.subscribe(function (size) {
+        try {
+          localStorage.setItem("drawerFontSize", size);
+        } catch (e) {
+          // ignore - nothing to persist to
+        }
+      });
+    }
   </script>
 </body>
 </html>
