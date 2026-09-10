@@ -493,13 +493,19 @@ introView =
             [ Html.img
                 [ HA.src logoDataUri
                 , HA.alt "Logo"
-                , HA.style "height" "72px"
+                , HA.style "width" "30vw"
+                , HA.style "max-width" "260px"
+                , HA.style "min-width" "90px"
+                , HA.style "height" "auto"
                 ]
                 []
             , Html.img
                 [ HA.src oxfordLogoDataUri
                 , HA.alt "Oxford"
-                , HA.style "height" "144px"
+                , HA.style "width" "30vw"
+                , HA.style "max-width" "260px"
+                , HA.style "min-width" "90px"
+                , HA.style "height" "auto"
                 ]
                 []
             ]
